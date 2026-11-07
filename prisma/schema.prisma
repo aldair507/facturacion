@@ -1,0 +1,326 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["views"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model auditoria {
+  id          BigInt    @id @default(autoincrement())
+  usuario_id  BigInt?
+  accion      String    @db.VarChar(50)
+  tabla       String?   @db.VarChar(50)
+  registro_id String?
+  detalle     Json?
+  ip          String?   @db.Inet
+  creado_en   DateTime  @default(now()) @db.Timestamptz(6)
+  usuarios    usuarios? @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([creado_en], map: "idx_auditoria_fecha")
+  @@index([usuario_id, creado_en], map: "idx_auditoria_usuario")
+}
+
+model cajas {
+  id           Int            @id @default(autoincrement())
+  nombre       String         @db.VarChar(50)
+  activo       Boolean        @default(true)
+  cierres_caja cierres_caja[]
+  facturas     facturas[]
+}
+
+model cierres_caja {
+  id             BigInt        @id @default(autoincrement())
+  caja_id        Int
+  usuario_id     BigInt
+  fecha_apertura DateTime      @default(now()) @db.Timestamptz(6)
+  fecha_cierre   DateTime?     @db.Timestamptz(6)
+  base_inicial   Decimal       @default(0) @db.Decimal(14, 2)
+  total_ventas   Decimal       @default(0) @db.Decimal(14, 2)
+  total_efectivo Decimal       @default(0) @db.Decimal(14, 2)
+  total_otros    Decimal       @default(0) @db.Decimal(14, 2)
+  efectivo_contado Decimal?    @db.Decimal(14, 2)
+  diferencia     Decimal       @default(0) @db.Decimal(14, 2)
+  estado         estado_cierre @default(ABIERTO)
+  observaciones  String?
+  cajas          cajas         @relation(fields: [caja_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios       usuarios      @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  facturas       facturas[]
+
+  @@index([caja_id, estado], map: "idx_cierres_caja_estado")
+  @@index([fecha_apertura], map: "idx_cierres_fecha")
+}
+
+model clientes {
+  id                     BigInt         @id @default(autoincrement())
+  tipo_doc               tipo_documento @default(CC)
+  num_doc                String         @db.VarChar(20)
+  razon_social           String         @db.VarChar(200)
+  email                  String?        @db.VarChar(120)
+  direccion              String?        @db.VarChar(200)
+  telefono               String?        @db.VarChar(30)
+  regimen                String?        @db.VarChar(50)
+  responsabilidad_fiscal String?        @db.VarChar(50)
+  activo                 Boolean        @default(true)
+  creado_en              DateTime       @default(now()) @db.Timestamptz(6)
+  facturas               facturas[]
+
+  @@unique([tipo_doc, num_doc])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model detalle_factura {
+  id              BigInt     @id @default(autoincrement())
+  factura_id      BigInt
+  producto_id     BigInt?
+  codigo          String     @db.VarChar(40)
+  descripcion     String     @db.VarChar(200)
+  cantidad        Decimal    @db.Decimal(14, 3)
+  precio_unitario Decimal    @db.Decimal(14, 2)
+  descuento       Decimal    @default(0) @db.Decimal(14, 2)
+  iva_pct         Decimal    @default(0) @db.Decimal(5, 2)
+  subtotal        Decimal    @db.Decimal(14, 2)
+  iva             Decimal    @default(0) @db.Decimal(14, 2)
+  total           Decimal    @db.Decimal(14, 2)
+  facturas        facturas   @relation(fields: [factura_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productos       productos? @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([factura_id], map: "idx_detalle_factura")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model empresa {
+  id               Int      @id @default(1) @db.SmallInt
+  nit              String   @db.VarChar(20)
+  dv               String?  @db.Char(1)
+  razon_social     String   @db.VarChar(200)
+  nombre_comercial String?  @db.VarChar(200)
+  direccion        String?  @db.VarChar(200)
+  ciudad           String?  @db.VarChar(100)
+  telefono         String?  @db.VarChar(30)
+  email            String?  @db.VarChar(120)
+  regimen          String?  @db.VarChar(50)
+  logo_url         String?
+  creado_en        DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model facturas {
+  id                     BigInt                   @id @default(autoincrement())
+  prefijo                String                   @db.VarChar(10)
+  numero                 Int
+  cliente_id             BigInt?
+  usuario_id             BigInt
+  caja_id                Int?
+  cierre_id              BigInt?
+  idempotency_key        String?                  @db.VarChar(80)
+  subtotal               Decimal                  @default(0) @db.Decimal(14, 2)
+  descuento              Decimal                  @default(0) @db.Decimal(14, 2)
+  iva_total              Decimal                  @default(0) @db.Decimal(14, 2)
+  total                  Decimal                  @default(0) @db.Decimal(14, 2)
+  estado                 estado_factura           @default(BORRADOR)
+  fecha_emision          DateTime                 @default(now()) @db.Timestamptz(6)
+  anulada_en             DateTime?                @db.Timestamptz(6)
+  motivo_anulacion       String?                  @db.VarChar(200)
+  detalle_factura        detalle_factura[]
+  cajas                  cajas?                   @relation(fields: [caja_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cierres_caja           cierres_caja?            @relation(fields: [cierre_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  clientes               clientes?                @relation(fields: [cliente_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios               usuarios                 @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  facturas_electronicas  facturas_electronicas?
+  inventario_movimientos inventario_movimientos[]
+  pagos                  pagos[]
+
+  @@unique([prefijo, numero])
+  @@unique([usuario_id, idempotency_key], map: "facturas_usuario_idempotency_key_unico")
+  @@index([cierre_id], map: "idx_facturas_cierre")
+  @@index([cliente_id], map: "idx_facturas_cliente")
+  @@index([estado], map: "idx_facturas_estado")
+  @@index([fecha_emision], map: "idx_facturas_fecha")
+  @@index([usuario_id, id(sort: Desc)], map: "idx_facturas_usuario")
+  @@index([caja_id, fecha_emision], map: "idx_facturas_caja_fecha")
+  @@index([estado, fecha_emision], map: "idx_facturas_estado_fecha")
+}
+
+model facturas_electronicas {
+  id             BigInt      @id @default(autoincrement())
+  factura_id     BigInt      @unique
+  cufe           String?     @db.VarChar(120)
+  estado         estado_dian @default(PENDIENTE)
+  xml_url        String?
+  pdf_url        String?
+  respuesta_dian Json?
+  enviado_en     DateTime?   @db.Timestamptz(6)
+  actualizado_en DateTime    @default(now()) @db.Timestamptz(6)
+  facturas       facturas    @relation(fields: [factura_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inventario_movimientos {
+  id             BigInt              @id @default(autoincrement())
+  producto_id    BigInt
+  tipo           tipo_mov_inventario
+  cantidad       Decimal             @db.Decimal(14, 3)
+  costo_unitario Decimal             @default(0) @db.Decimal(14, 2)
+  motivo         String?             @db.VarChar(200)
+  referencia     String?             @db.VarChar(100)
+  usuario_id     BigInt?
+  factura_id     BigInt?
+  creado_en      DateTime            @default(now()) @db.Timestamptz(6)
+  facturas       facturas?           @relation(fields: [factura_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_mov_factura")
+  productos      productos           @relation(fields: [producto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuarios       usuarios?           @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([producto_id, creado_en], map: "idx_mov_producto")
+  @@index([factura_id], map: "idx_mov_factura")
+  @@index([tipo, creado_en], map: "idx_mov_tipo_fecha")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model pagos {
+  id         BigInt      @id @default(autoincrement())
+  factura_id BigInt
+  metodo     metodo_pago
+  monto           Decimal     @db.Decimal(14, 2)
+  referencia      String?     @db.VarChar(100)
+  idempotency_key String?     @db.VarChar(80)
+  fecha           DateTime    @default(now()) @db.Timestamptz(6)
+  facturas        facturas    @relation(fields: [factura_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([factura_id, idempotency_key], map: "pagos_factura_idempotency_key_unico")
+  @@index([factura_id], map: "idx_pagos_factura")
+  @@index([fecha], map: "idx_pagos_fecha")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model productos {
+  id                     BigInt                   @id @default(autoincrement())
+  codigo                 String                   @unique @db.VarChar(40)
+  nombre                 String                   @db.VarChar(200)
+  descripcion            String?
+  precio_venta           Decimal                  @db.Decimal(14, 2)
+  costo                  Decimal                  @default(0) @db.Decimal(14, 2)
+  iva_pct                Decimal                  @default(19) @db.Decimal(5, 2)
+  unidad                 String                   @default("UND") @db.VarChar(20)
+  stock                  Decimal                  @default(0) @db.Decimal(14, 3)
+  stock_minimo           Decimal                  @default(0) @db.Decimal(14, 3)
+  activo                 Boolean                  @default(true)
+  creado_en              DateTime                 @default(now()) @db.Timestamptz(6)
+  actualizado_en         DateTime                 @default(now()) @db.Timestamptz(6)
+  detalle_factura        detalle_factura[]
+  inventario_movimientos inventario_movimientos[]
+
+  @@index([activo], map: "idx_productos_activo")
+  @@index([codigo], map: "idx_productos_codigo")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model resoluciones {
+  id             Int      @id @default(autoincrement())
+  prefijo        String   @db.VarChar(10)
+  rango_desde    Int
+  rango_hasta    Int
+  siguiente      Int
+  vigencia_desde DateTime @db.Date
+  vigencia_hasta DateTime @db.Date
+  clave_tecnica  String?
+  activo         Boolean  @default(true)
+}
+
+model roles {
+  id          Int        @id @default(autoincrement()) @db.SmallInt
+  nombre      String     @unique @db.VarChar(30)
+  descripcion String?    @db.VarChar(120)
+  usuarios    usuarios[]
+}
+
+model usuarios {
+  id                     BigInt                   @id @default(autoincrement())
+  nombre                 String                   @db.VarChar(120)
+  email                  String                   @unique @db.VarChar(120)
+  password_hash          String
+  token_version          Int                      @default(0)
+  rol_id                 Int                      @db.SmallInt
+  activo                 Boolean                  @default(true)
+  ultimo_acceso          DateTime?                @db.Timestamptz(6)
+  creado_en              DateTime                 @default(now()) @db.Timestamptz(6)
+  actualizado_en         DateTime                 @default(now()) @db.Timestamptz(6)
+  auditoria              auditoria[]
+  cierres_caja           cierres_caja[]
+  facturas               facturas[]
+  inventario_movimientos inventario_movimientos[]
+  roles                  roles                    @relation(fields: [rol_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([rol_id], map: "idx_usuarios_rol")
+}
+
+view v_ventas_diarias {
+  dia       DateTime? @db.Date
+  facturas  BigInt?
+  subtotal  Decimal?  @db.Decimal
+  descuento Decimal?  @db.Decimal
+  iva       Decimal?  @db.Decimal
+  total     Decimal?  @db.Decimal
+}
+
+view v_ventas_mensuales {
+  mes       DateTime? @db.Timestamptz(6)
+  facturas  BigInt?
+  subtotal  Decimal?  @db.Decimal
+  descuento Decimal?  @db.Decimal
+  iva       Decimal?  @db.Decimal
+  total     Decimal?  @db.Decimal
+}
+
+view v_ventas_anuales {
+  anio      DateTime? @db.Timestamptz(6)
+  facturas  BigInt?
+  subtotal  Decimal?  @db.Decimal
+  descuento Decimal?  @db.Decimal
+  iva       Decimal?  @db.Decimal
+  total     Decimal?  @db.Decimal
+}
+
+enum estado_cierre {
+  ABIERTO
+  CERRADO
+}
+
+enum estado_dian {
+  PENDIENTE
+  ENVIADA
+  ACEPTADA
+  RECHAZADA
+  ERROR
+}
+
+enum estado_factura {
+  BORRADOR
+  EMITIDA
+  PAGADA
+  ANULADA
+}
+
+enum metodo_pago {
+  EFECTIVO
+  TARJETA
+  TRANSFERENCIA
+  NEQUI
+  DAVIPLATA
+  CREDITO
+}
+
+enum tipo_documento {
+  CC
+  NIT
+  CE
+  PP
+  TI
+}
+
+enum tipo_mov_inventario {
+  ENTRADA
+  SALIDA
+  AJUSTE
+}
